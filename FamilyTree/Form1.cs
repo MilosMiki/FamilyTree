@@ -5,16 +5,48 @@ namespace FamilyTree
 {
     public partial class Form1 : Form
     {
+        private static bool entered;
+        private static List<GroupBox>? gbList;
         public Form1()
         {
             InitializeComponent();
         }
 
+        public static List<GroupBox>? GbList { get => gbList; set => gbList = value; }
+
         private void Form1_Load(object sender, EventArgs e)
         {
             Person.loadDatabase("backend.txt");
             Person.scaleDatabaseToSize();
-            Person.addDatabaseToGroupBox(this);
+            gbList = Person.addDatabaseToGroupBox(this);
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            if (gbList == null) return;
+            entered = false;
+            foreach (GroupBox gb in gbList)
+            {
+                entered = gb.ClientRectangle.Contains(gb.PointToClient(Cursor.Position));
+                if (entered)
+                {
+                    gb.Size = new Size(324, 275);
+                    //break;
+                }
+                else
+                {
+                    gb.Size = new Size(145, 275);
+                }
+            }
+        }
+
+        public void addAndReloadDatabase(Person p, string path = "backend.txt")
+        {
+            this.Controls.Clear();
+            Person.addPersonToFile(p, path);
+            Person.loadDatabase(path);
+            Person.scaleDatabaseToSize();
+            gbList = Person.addDatabaseToGroupBox(this);
         }
     }
 
@@ -25,7 +57,9 @@ namespace FamilyTree
         public static int groupHeight = 285;
         public static List<Person>? persons;
 
+        private int id;
         private int level;
+        private int savedLevel;
         private double motherGenes;
         private double fatherGenes;
         private double genesToMe;
@@ -50,13 +84,13 @@ namespace FamilyTree
             return new DateTime(year, month, day);
         }
 
-        public static GroupBox createGroupBox(Person p)
+        public static GroupBox createGroupBox(Person p, Form1 f1)
         {
             GroupBox gb = new GroupBox();
 
             gb.Name = "Person_" + people;
             gb.Text = "Person";
-            gb.Size = new Size(145, 275); //324 with options
+            gb.Size = new Size(324, 275); //324 with options, 145 without
             gb.Location = new Point(12, 12);
             gb.BackColor = Color.FromArgb(255,
                 (int)(255 * p.MotherGenes / 100.00),
@@ -64,7 +98,15 @@ namespace FamilyTree
                 (int)(171 * Math.Max(p.FatherGenes, p.MotherGenes) / 100.00));
             PictureBox pb = new PictureBox();
             pb.Size = new Size(100, 100);
-            pb.BackColor = Color.Beige;
+            try
+            {
+                Image im = Image.FromFile(@"Pictures\" + p.Fullname + ".jpg");
+                pb.Image = (Image)(new Bitmap(im, new Size(100, 100)));
+            }
+            catch
+            {
+                pb.BackColor = Color.Beige;
+            }
             pb.Location = new Point(23, 20);
             gb.Controls.Add(pb);
             TextBox tb1 = new TextBox();
@@ -101,19 +143,179 @@ namespace FamilyTree
             }
             gb.Controls.Add(dt2);
 
+            //adding Options controls
+            GroupBox gb1 = new GroupBox();
+            gb1.Size = new Size(157, 141); //+16 per
+            gb1.Location = new Point(157, 12);
+            Button b1 = new Button();
+            b1.Text = "+ Parent";
+            b1.Size = new Size(132, 23);
+            b1.Location = new Point(13, 22);
+            b1.BackColor = Color.LightGray;
+            b1.Name = p.Fullname;
+            b1.Click += (sender, e) => parent_click(sender, e, f1);
+            gb1.Controls.Add(b1);
+            Button b2 = new Button();
+            b2.Text = "+ Sibling";
+            b2.Size = new Size(132, 23);
+            b2.Location = new Point(13, 50);
+            b2.BackColor = Color.LightGray;
+            b2.Name = p.Fullname;
+            b2.Click += (sender, e) => sibling_click(sender, e, f1);
+            gb1.Controls.Add(b2);
+            Button b3 = new Button();
+            b3.Text = "+ Child";
+            b3.Size = new Size(132, 23);
+            b3.Location = new Point(13, 76);
+            b3.BackColor = Color.LightGray;
+            b3.Name = p.Fullname;
+            b3.Click += (sender, e) => child_click(sender, e, f1);
+            gb1.Controls.Add(b3);
+            Button b4 = new Button();
+            b4.Text = "DELETE SELF";
+            b4.Size = new Size(132, 23);
+            b4.Location = new Point(13, 101);
+            b4.BackColor = Color.LightGray;
+            b4.ForeColor = Color.Red;
+            b4.Name = p.Fullname;
+            b4.Click += (sender, e) => delete_click(sender, e, f1);
+            gb1.Controls.Add(b4);
+            gb.Controls.Add(gb1);
 
+            gb.Size = new Size(145, 275);
             gb.Location = new Point(p.LeftCoords, p.TopCoords);
             people++;
             return gb;
         }
 
-        public static void addDatabaseToGroupBox(Form1 f1)
+        static void parent_click(object? sender, EventArgs e, Form1 f1)
         {
-            if (persons == null) return;
+            //Get the button clicked
+            Button? btn = sender as Button;
+            //MessageBox.Show(btn.Name + " Clicked");
+
+            if (persons == null || btn == null) return;
+            Person pNew = new Person();
+            bool b = false;
             foreach (Person p in persons)
             {
-                f1.Controls.Add(createGroupBox(p));
+                if (p.Fullname != null && p.Fullname.Equals(btn.Name))
+                {
+                    b = true;
+                    pNew.Level = p.Level - 1;
+                    pNew.SavedLevel = p.SavedLevel - 1;
+                    pNew.MotherGenes = p.MotherGenes / 2.0;
+                    pNew.FatherGenes = p.FatherGenes / 2.0;
+                    pNew.genesToMe = p.GenesToMe * 0.5;
+                    pNew.BirthDate = p.BirthDate.AddYears(-20);
+                    pNew.DeathDate = p.DeathDate.AddDays(1);
+                    pNew.Fullname = "";
+                    pNew.Title = "";
+                    pNew.ManualShift = 0;
+                }
             }
+            if(b) persons.Add(pNew);
+            f1.addAndReloadDatabase(pNew);
+        }
+        static void sibling_click(object? sender, EventArgs e, Form1 f1)
+        {
+            //Get the button clicked
+            Button? btn = sender as Button;
+            //MessageBox.Show(btn.Name + " Clicked");
+
+            if (persons == null || btn == null) return;
+            Person pNew = new Person();
+            bool b = false;
+            foreach (Person p in persons)
+            {
+                if (p.Fullname != null && p.Fullname.Equals(btn.Name))
+                {
+                    b = true;
+                    pNew.Level = p.Level;
+                    pNew.SavedLevel = p.SavedLevel;
+                    pNew.MotherGenes = p.MotherGenes / 2.0;
+                    pNew.FatherGenes = p.FatherGenes / 2.0;
+                    pNew.genesToMe = p.GenesToMe * (p.GenesToMe == 100 ? 0.5 : 1);
+                    pNew.BirthDate = p.BirthDate;
+                    pNew.DeathDate = p.DeathDate.AddDays(1);
+                }
+            }
+            if (b) persons.Add(pNew);
+            f1.addAndReloadDatabase(pNew);
+        }
+        static void child_click(object? sender, EventArgs e, Form1 f1)
+        {
+            //Get the button clicked
+            Button? btn = sender as Button;
+            //MessageBox.Show(btn.Name + " Clicked");
+
+            if (persons == null || btn == null) return;
+            Person pNew = new Person();
+            bool b = false;
+            foreach (Person p in persons)
+            {
+                if (p.Fullname != null && p.Fullname.Equals(btn.Name))
+                {
+                    b = true;
+                    pNew.Level = p.Level + 1;
+                    pNew.SavedLevel = p.SavedLevel + 1;
+                    pNew.MotherGenes = p.MotherGenes / 2.0;
+                    pNew.FatherGenes = p.FatherGenes / 2.0;
+                    pNew.genesToMe = p.GenesToMe * 0.5;
+                    pNew.BirthDate = p.BirthDate.AddYears(20);
+                    pNew.DeathDate = p.DeathDate.AddYears(20);
+                }
+            }
+            if (b) persons.Add(pNew);
+            f1.addAndReloadDatabase(pNew);
+        }
+        static void delete_click(object? sender, EventArgs e, Form1 f1)
+        {
+            //Get the button clicked
+            Button? btn = sender as Button;
+            //MessageBox.Show(btn.Name + " Clicked");
+
+            if (persons == null || btn == null) return;
+        }
+
+        public static bool addPersonToFile(Person p, string path)
+        {
+            if(p==null) return false;
+            TextWriter tw = new StreamWriter(path, append: true);
+            tw.WriteLine();
+            tw.WriteLine(p.SavedLevel);
+            tw.WriteLine(p.MotherGenes);
+            tw.WriteLine(p.FatherGenes);
+            tw.WriteLine(p.GenesToMe);
+            tw.WriteLine(p.Title);
+            tw.WriteLine(p.Fullname);
+            tw.WriteLine(String.Format("{0,2:D}",p.BirthDate.Day) + "." + String.Format("{0,2:D}", p.BirthDate.Month) + "." + p.BirthDate.Year);
+            if (p.DeathDate > DateTime.Now)
+            {
+                tw.WriteLine("NULL");
+            }
+            else
+            {
+                tw.WriteLine(p.DeathDate.Day + "." + p.DeathDate.Month + "." + p.DeathDate.Year);
+            }
+            tw.WriteLine(p.ManualShift);
+
+            //tw.WriteLine();
+            tw.Close();
+            return true;
+        }
+
+        public static List<GroupBox> addDatabaseToGroupBox(Form1 f1)
+        {
+            List<GroupBox> gbList = new List<GroupBox>();
+            if (persons == null) return gbList;
+            foreach (Person p in persons)
+            {
+                GroupBox gb = createGroupBox(p,f1);
+                f1.Controls.Add(gb);
+                gbList.Add(gb);
+            }
+            return gbList;
         }
 
         public static List<Person> scaleDatabaseToSize()
@@ -175,6 +377,7 @@ namespace FamilyTree
                     case 0: //level
                         p = new Person();
                         p.Level = Convert.ToInt32(((string)s).Trim());
+                        p.SavedLevel = p.Level;
                         break;
                     case 1: //mother genes
                         p.MotherGenes = Convert.ToDouble(((string)s).Trim());
@@ -201,6 +404,9 @@ namespace FamilyTree
                     case 8: //manual shift
                         p.ManualShift = Convert.ToDouble(((string)s).Trim());
                         break;
+                    /*case 9: //id
+                        p.Id = Convert.ToInt32(((string)s).Trim());
+                        break;*/
                     case 9:
                         persons.Add(p);
                         i = -1;
@@ -265,6 +471,8 @@ namespace FamilyTree
         public int LeftCoords { get => leftCoords; set => leftCoords = value; }
         public int TopCoords { get => topCoords; set => topCoords = value; }
         public double ManualShift { get => manualShift; set => manualShift = value; }
+        public int Id { get => id; set => id = value; }
+        public int SavedLevel { get => savedLevel; set => savedLevel = value; }
 
         public static bool operator ==(Person? left, Person? right)
         {
